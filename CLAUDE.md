@@ -12,7 +12,9 @@ new/changed articles.
 2. Entry point: @"main.py" — repo root, not inside `src/`.
 3. Source code: @"src/" — currently empty except `__init__.py`. All implementation
    belongs here as it's built; `main.py` should stay a thin orchestrator that imports from `src/`, not host logic itself.
-4. Dependencies: @"requirements.txt" — pip-installed, no Poetry/uv.
+4. Dependencies: @"pyproject.toml" + @"uv.lock" — managed with uv, not pip/Poetry. The
+   Dockerfile installs from the lockfile for reproducible, fast builds; portability across
+   deploy hosts comes from the built Docker image, not the dependency manager.
 5. Env template: @".env.example" — documents required env vars (`OPENAI_API_KEY`, etc.);
    `.env` itself is git-ignored and never committed.
 6. Prior attempt analysis (reference only, do not copy): @"docs/prior/prior-implementation.md"
@@ -21,7 +23,7 @@ new/changed articles.
 
 - Language: Python
 - Naming: snake_case
-- Dependencies: `requirements.txt` + pip (no Poetry/uv)
+- Dependencies: uv (`pyproject.toml` + `uv.lock`), no pip/Poetry
 - AI platform: OpenAI (Assistants/Responses API + OpenAI Vector Store)
 - Secrets: never hard-code API keys — read from environment variables; document
   required vars in `.env.example` (never commit `.env`)
