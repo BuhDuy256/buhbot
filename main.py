@@ -24,13 +24,16 @@ def run() -> int:
 
     articles = zendesk.fetch_all_articles()                     # DISCOVERED
     report = RunReport()
-    for art in articles:
+    total = len(articles)
+    for i, art in enumerate(articles, start=1):
+        title = (art.title[:60] + "…") if len(art.title) > 60 else art.title
+        print(f"[process] {i}/{total} article {art.id} — {title}")
         # Per-article guard: one bad article must not take down the other 29-49
         # (transition-techniques.md "Why per-article try/except").
         try:
             report.add(process.article(art, client, store_id, state))
         except Exception as exc:  # noqa: BLE001
-            print(f"[error] article {art.id} crashed: {exc}")
+            print(f"    -> ERROR: article {art.id} crashed: {exc}")
             report.add(Outcome.failed(art.id))
     report.log()
     return report.exit_code()

@@ -9,9 +9,9 @@ from dataclasses import dataclass
 
 import requests
 
+from . import artifacts
 from .config import (
     ARTICLES_PER_PAGE,
-    ENV,
     ZENDESK_ARTICLES_PATH,
     ZENDESK_BASE_URL,
     max_articles,
@@ -31,6 +31,7 @@ class Article:
 
 
 def _to_article(raw: dict) -> Article:
+    artifacts.dump_raw(raw)  # inspection side-channel; no-op unless enabled
     return Article(
         id=str(raw["id"]),
         title=raw.get("title", ""),
@@ -41,25 +42,22 @@ def _to_article(raw: dict) -> Article:
 
 
 def fetch_all_articles() -> list[Article]:
-    """List every article (or the dev cap). Returns them as ``Article`` records.
+    """List articles as ``Article`` records, honoring the ``ENV`` cap.
 
-    In ``development`` a single request with ``per_page`` capped to
-    ``MAX_ARTICLES_DEV`` keeps local runs fast; in ``production`` it follows
-    ``next_page`` until exhausted.
+    ``development`` = one capped request for a fast local run; ``production`` =
+    follow ``next_page`` to exhaustion.
     """
     base = f"https://{ZENDESK_BASE_URL}{ZENDESK_ARTICLES_PATH}"
     cap = max_articles()
 
-    if ENV == "development":
-        url = f"{base}?per_page={cap}" if cap else base
-        resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+    if cap is not None:  # capped single-page fetch (development)
+        resp = requests.get(f"{base}?per_page={cap}", headers=_HEADERS, timeout=_TIMEOUT)
         resp.raise_for_status()
-        raw = resp.json().get("articles", [])
-        articles = [_to_article(a) for a in raw]
+        articles = [_to_article(a) for a in resp.json().get("articles", [])]
         print(f"[fetch] {len(articles)} article(s) (development cap={cap})")
         return articles
 
-    url = f"{base}?per_page={ARTICLES_PER_PAGE}"
+    url = f"{base}?per_page={ARTICLES_PER_PAGE}"  # full pagination
     articles: list[Article] = []
     while url:
         resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
@@ -69,3 +67,21 @@ def fetch_all_articles() -> list[Article]:
         url = data.get("next_page")
     print(f"[fetch] {len(articles)} article(s) (production, full pagination)")
     return articles
+
+
+def fetch_all_article_ids() -> set[str]:
+    """Every real article id in the full catalog, ignoring the ``ENV`` cap and
+    without dumping artifacts. Used by the eval to distinguish a real cited URL
+    from a hallucinated one (a cited article may be a body link outside the
+    uploaded subset, so the whole catalog is the right oracle)."""
+    base = f"https://{ZENDESK_BASE_URL}{ZENDESK_ARTICLES_PATH}"
+    url = f"{base}?per_page={ARTICLES_PER_PAGE}"
+    ids: set[str] = set()
+    while url:
+        resp = requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+        resp.raise_for_status()
+        data = resp.json()
+        ids.update(str(a["id"]) for a in data.get("articles", []))
+        url = data.get("next_page")
+    print(f"[eval] validating cited URLs against {len(ids)} real article(s)")
+    return ids

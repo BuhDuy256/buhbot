@@ -67,10 +67,12 @@ def upload_chunks(
     file_to_index: dict[str, int] = {}
 
     # Phase 1: base files (PENDING -> UPLOADING).
+    print(f"       uploading {len(chunks)} file(s) to Files API...")
     for c in chunks:
         try:
             file_id = _create_base_file(client, article_id, c)
         except Exception as exc:  # noqa: BLE001 -- one bad chunk must not sink the article
+            print(f"       chunk {c.index}: base-file upload failed: {exc}")
             results[c.index] = ChunkResult(c.index, None, FAILED, str(exc))
             continue
         file_to_index[file_id] = c.index
@@ -92,6 +94,7 @@ def upload_chunks(
             batch = client.vector_stores.file_batches.create(
                 vector_store_id=store_id, files=entries
             )
+            print(f"       batch {batch.id} created; embedding {len(entries)} file(s)...")
             batch = _poll_batch(client, store_id, batch.id)
             _resolve_batch(client, store_id, batch, file_to_index, results)
         except Exception as exc:  # noqa: BLE001 -- attach/poll failure fails these chunks
@@ -116,12 +119,20 @@ def _poll_batch(client: OpenAI, store_id: str, batch_id: str):
     path only, with this function as the clean seam to add them once the
     stress-test phase shows what's needed (state-design.md §10/§11).
     """
+    start = time.monotonic()
     batch = client.vector_stores.file_batches.retrieve(batch_id, vector_store_id=store_id)
     while batch.status == "in_progress":
         time.sleep(BATCH_POLL_INTERVAL_SECONDS)
         batch = client.vector_stores.file_batches.retrieve(
             batch_id, vector_store_id=store_id
         )
+        counts = batch.file_counts
+        elapsed = int(time.monotonic() - start)
+        print(
+            f"       ...embedding {counts.completed}/{counts.total} "
+            f"done, {counts.in_progress} in progress ({elapsed}s)"
+        )
+    print(f"       batch {batch.status} after {int(time.monotonic() - start)}s")
     return batch
 
 

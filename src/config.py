@@ -46,6 +46,14 @@ DATA_DIR: Path = REPO_ROOT / "data"
 HASH_STORE_PATH: Path = DATA_DIR / "hash_store.json"
 LOCK_PATH: Path = DATA_DIR / ".run.lock"
 
+# --- debug artifacts (inspection only, NOT on the upload path) ----------------
+# When on, each run dumps the raw fetched JSON and the exact chunk Markdown to
+# disk so the data can be eyeballed. The uploader still sends in-memory bytes --
+# these files are never read back (see artifacts.py). Auto-on in development.
+DUMP_ARTIFACTS: bool = ENV == "development"
+RAW_DIR: Path = DATA_DIR / "raw"      # raw/<article_id>.json
+CHUNK_DIR: Path = DATA_DIR / "chunks"  # chunks/<article_id>-chunk-<i>.md
+
 
 def max_articles() -> int | None:
     """Fetch cap for the current ``ENV``. ``None`` means full pagination."""

@@ -23,6 +23,12 @@ def _article(body="<p>hello world</p>", aid="1"):
     )
 
 
+@pytest.fixture(autouse=True)
+def _no_artifact_dump(monkeypatch):
+    """Keep the debug side-channel from writing into the real data/ dir."""
+    monkeypatch.setattr(process.artifacts, "dump_chunks", lambda *a, **k: None)
+
+
 @pytest.fixture
 def state(tmp_path):
     return HashStore(tmp_path / "hash_store.json", {})
