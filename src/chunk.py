@@ -10,9 +10,14 @@ a token budget is hit. There is no position to drift.
 Guarantees that matter for the assignment:
   * Fenced code blocks (``` / ~~~) are treated as atomic -- never cut mid-fence
     (unless a single fence alone exceeds the hard limit; see ``_hard_split``).
-  * Every emitted chunk carries an ``Article URL:`` line at the top, so any
-    chunk retrieved by search is independently citable (the whole reason
-    chunking stays client-side -- optimus-bot-pipeline-review.md §2).
+  * Every emitted chunk carries a data-only provenance header at the top --
+    ``# <title>`` then ``Article URL: <url>`` -- so any chunk retrieved by search
+    is independently citable AND topically anchored (the whole reason chunking
+    stays client-side -- optimus-bot-pipeline-review.md §2). The header is
+    provenance only: no imperative "cite this" prose lives in the corpus, because
+    that text would pollute the chunk's embedding and dilute retrieval. Citation
+    behavior is the system prompt's job; the corpus only has to make the exact
+    ``Article URL:`` string it asks for present in every retrieved chunk.
 
 Budgets:
   * CHUNK_BUDGET_TOKENS (~800) is a *soft* target for retrieval granularity:
@@ -37,7 +42,7 @@ _encoder = tiktoken.encoding_for_model(TOKENIZER_MODEL)
 class ChunkText:
     """One upload unit. ``index`` is the per-article ``chunk_index`` that
     ``uploader.py`` attaches as a file attribute; ``text`` already includes the
-    ``Article URL:`` header."""
+    provenance header (``# <title>`` + ``Article URL:``)."""
 
     index: int
     text: str
@@ -100,8 +105,14 @@ def _hard_split(block: str, limit: int) -> list[str]:
     return pieces
 
 
-def split_markdown(md: str, article_url: str) -> list[ChunkText]:
-    """Split cleaned Markdown into chunks, each prefixed with ``Article URL:``."""
+def split_markdown(md: str, article_url: str, title: str = "") -> list[ChunkText]:
+    """Split cleaned Markdown into chunks, each prefixed with a provenance header.
+
+    The header is ``# <title>`` (omitted when ``title`` is empty) followed by an
+    ``Article URL:`` line, then a blank line, then the chunk body. Both lines are
+    data only -- see the module docstring for why no imperative citation prose
+    goes here.
+    """
     md = md.strip()
     if not md:
         return []
@@ -128,7 +139,9 @@ def split_markdown(md: str, article_url: str) -> list[ChunkText]:
         cur_tokens += bt
     flush()
 
-    header = f"Article URL: {article_url}"
+    header_lines = [f"# {title}"] if title else []
+    header_lines.append(f"Article URL: {article_url}")
+    header = "\n".join(header_lines)
     return [
         ChunkText(index=i, text=f"{header}\n\n{body}")
         for i, body in enumerate(bodies)

@@ -1,7 +1,7 @@
 """Article FSM tests (src/process.py) with the network faked out.
 
 Covers the decisions the design is built around: write-after-confirm,
-all-or-nothing (§5), lazy rollback (§10), cleanup-before-reprocess (§7), and the
+all-or-nothing (§5), eager rollback (§10), cleanup-before-reprocess (§7), and the
 HASHED verdict (added/updated/skip).
 """
 
@@ -83,16 +83,18 @@ def test_unchanged_article_is_skipped_with_no_upload(state, deleted, monkeypatch
     assert deleted == []
 
 
-# --- all-or-nothing + lazy rollback -----------------------------------------
+# --- all-or-nothing + eager rollback ----------------------------------------
 
-def test_partial_upload_is_failed_and_keeps_uploaded_chunks(state, deleted, monkeypatch):
+def test_partial_upload_is_failed_and_rolls_back_uploaded_chunks(state, deleted, monkeypatch):
     _fake_upload(monkeypatch, [UPLOADED, FAILED, UPLOADED])
     out = process.article(_article(), None, "vs", state)
 
     assert out.kind == "failed"
     assert state.get_status("1") == "FAILED"
-    # lazy rollback: only the UPLOADED chunk ids are kept, for next-run cleanup
-    assert state.get_chunk_ids("1") == ["file_1_0", "file_1_2"]
+    # eager rollback: the chunks that DID upload are deleted immediately so a
+    # half-indexed article is never live, and no ids are kept.
+    assert deleted == ["file_1_0", "file_1_2"]
+    assert state.get_chunk_ids("1") == []
     # hash NOT written -> next run reprocesses
     assert state.get_hash("1") is None
 
@@ -113,18 +115,20 @@ def test_updated_article_deletes_old_chunks_first(state, deleted, monkeypatch):
     assert state.get_chunk_ids("1") == ["file_1_0", "file_1_1"]
 
 
-def test_failed_article_is_reprocessed_and_old_chunks_cleaned(state, deleted, monkeypatch):
+def test_failed_article_is_reprocessed_after_rollback(state, deleted, monkeypatch):
     _fake_upload(monkeypatch, [UPLOADED, FAILED])
-    process.article(_article(), None, "vs", state)  # -> FAILED, keeps file_1_0
+    process.article(_article(), None, "vs", state)  # -> FAILED, rolls back file_1_0
     assert state.get_status("1") == "FAILED"
+    assert deleted == ["file_1_0"]  # eager rollback deleted the uploaded chunk
+    assert state.get_chunk_ids("1") == []  # nothing left on record to clean later
 
-    # next run: FAILED article reprocesses even if hash matches; its recorded
-    # (partial) chunk ids are cleaned up first
+    # next run: FAILED article reprocesses even if the content is unchanged
+    # (no hash was written); there are no stale chunks left to clean up.
     _fake_upload(monkeypatch, [UPLOADED, UPLOADED])
     out = process.article(_article(), None, "vs", state)
 
     assert out.kind in ("updated", "added")
-    assert "file_1_0" in deleted
+    assert deleted == ["file_1_0"]  # no additional cleanup was needed
     assert state.get_status("1") == "CONFIRMED"
 
 

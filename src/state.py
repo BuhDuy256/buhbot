@@ -7,9 +7,11 @@ called at an Article's terminal transition (state-design.md §6,
 transition-techniques.md "PROCESSING -> CONFIRMED/FAILED").
 
 Two rules that must not be "simplified away":
-  * A FAILED article still persists its ``chunk_file_ids`` (whatever uploaded
-    this attempt) but NOT its hash -- so the next run both cleans those chunks
-    and reprocesses the article (§6, §7).
+  * A FAILED article NEVER persists its hash -- so the next run reprocesses it
+    (§6, §7). Under eager rollback its ``chunk_file_ids`` are also emptied by
+    ``process`` (the uploaded chunks are deleted on failure), so a FAILED entry
+    carries no live ids; ``record_failed`` still faithfully stores whatever list
+    it is handed.
   * Writes are atomic (temp file + ``os.replace``) -- the state file lives on a
     persistent VM disk now, so a crash mid-write could otherwise corrupt it
     permanently (§6).
@@ -61,10 +63,12 @@ class HashStore:
         return list(entry.get("chunk_file_ids", [])) if entry else []
 
     def known_good_file_ids(self) -> set[str]:
-        """Union of ``chunk_file_ids`` across ALL articles (CONFIRMED and
-        FAILED). Used by reconciliation to tell real files from crash-orphans;
-        FAILED entries must be included, else Lazy rollback becomes Eager
-        (state-design.md §10)."""
+        """Union of ``chunk_file_ids`` across ALL articles. Used by
+        reconciliation to tell real files from crash-orphans. In practice these
+        are the CONFIRMED articles' ids: under eager rollback a FAILED entry
+        carries an empty list (its chunks were already deleted), so any store
+        file left behind by a failed attempt is correctly seen as an orphan and
+        swept (state-design.md §10)."""
         ids: set[str] = set()
         for entry in self.articles.values():
             ids.update(entry.get("chunk_file_ids", []))

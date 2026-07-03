@@ -313,6 +313,14 @@ don't. Binding sequence: deploy → let the pipeline run once (creates the `opti
 store) → then in the Playground create the Assistant and attach that now-existing
 store. One-time manual bind; it persists across daily runs because name-discovery
 keeps the same store ID stable.
+- *Required sampling config (set once, by hand, on the Assistant):* `temperature = 0`,
+  `top_p = 1`. A support RAG bot wants maximum determinism, not creativity, so the
+  temperature knob goes to its floor. At temperature 0 the distribution is already
+  collapsed onto the top token, which makes `top_p` effectively inert — so it is left
+  at 1 rather than stacking a second, harder-to-reason-about truncation. Honest caveat:
+  temperature 0 *reduces* run-to-run variance, it does **not** guarantee identical
+  output (infra-level nondeterminism remains) — which is why `evals/run_eval.py`
+  measures an adherence *rate* instead of asserting a single deterministic answer.
 - *Known edge case (accepted, not handled):* if the store is ever deleted, the next
   run recreates it with a **new** ID, breaking the manual binding — requires a manual
   re-attach. Self-healing this would require code to call `update-assistant` every run

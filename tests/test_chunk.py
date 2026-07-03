@@ -51,6 +51,22 @@ def test_short_article_is_one_chunk():
     assert "Just a short paragraph." in chunks[0].text
 
 
+def test_title_header_when_title_given():
+    md = "\n\n".join(f"Paragraph number {i} with some words." for i in range(80))
+    chunks = split_markdown(md, URL, title="Fix the Player")
+    assert chunks
+    for c in chunks:
+        # "# <title>" then the "Article URL:" line, then a blank line, then body
+        assert c.text.startswith(f"# Fix the Player\nArticle URL: {URL}\n\n")
+
+
+def test_no_title_keeps_url_only_header():
+    md = "Just one paragraph."
+    chunks = split_markdown(md, URL)  # no title -> no "# " line
+    assert chunks[0].text.startswith(f"Article URL: {URL}\n\n")
+    assert not chunks[0].text.startswith("#")
+
+
 # --- the regression guard: bounded chunk count ------------------------------
 
 def test_no_runaway_chunk_count():

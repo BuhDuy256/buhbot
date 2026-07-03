@@ -34,6 +34,13 @@ STATIC_MAX_CHUNK_TOKENS: int = 4096
 CHUNK_OVERLAP_TOKENS: int = 0
 TOKENIZER_MODEL: str = "gpt-4o"  # tiktoken encoding used for client token counts
 
+# Bumped whenever the per-chunk header TEMPLATE changes (e.g. adding the title
+# line). It is folded into the delta hash so an existing deployment re-uploads
+# every article once to pick up the new format -- a body-only hash would keep
+# serving the old header forever because the body is unchanged. v1 = URL-only
+# header; v2 = "# <title>" + "Article URL:" header.
+CHUNK_TEMPLATE_VERSION: int = 2
+
 # --- upload ------------------------------------------------------------------
 # How often to re-poll a file_batch while it is still in_progress. A max-wait
 # timeout is deliberately NOT set yet -- deferred to the stress-test phase

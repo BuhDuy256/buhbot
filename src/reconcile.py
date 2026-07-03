@@ -1,11 +1,12 @@
 """Run-start reconciliation pass (state-design.md §10).
 
 Deletes crash-orphans: files that exist in the vector store but aren't in the
-recorded known-good set (the union of every article's ``chunk_file_ids``, both
-CONFIRMED and FAILED). Such a file's owning article never reached a terminal
-state, so its ids were never written -- the set-difference is exactly how a
-crash-orphan is defined. Also catches drift from other causes (e.g. a file
-removed via the dashboard).
+recorded known-good set (the union of every article's ``chunk_file_ids`` -- in
+practice the CONFIRMED articles', since eager rollback empties FAILED entries).
+Such a file's owning article never reached a clean terminal state, so its ids
+were never recorded as good -- the set-difference is exactly how a crash-orphan
+(or an eager-rollback delete that itself failed) is defined. Also catches drift
+from other causes (e.g. a file removed via the dashboard).
 """
 
 from . import vector_store

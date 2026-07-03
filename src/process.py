@@ -4,9 +4,14 @@ DISCOVERED -> HASHED -> (SKIPPED | PROCESSING) -> (CONFIRMED | FAILED). Parent o
 the Chunk FSM: it calls ``uploader.upload_chunks`` and applies the all-or-nothing
 rule (§5) to decide the article's fate, then writes to disk exactly once via
 ``state`` -- the single write point that fixes the original hash-timing bug.
+
+On FAILED it does an *eager* rollback: the chunks that did upload are deleted
+immediately so a half-indexed article is never searchable, and reconcile.orphans
+is the backstop for any delete that itself failed.
 """
 
 from . import artifacts, chunk, content, uploader, vector_store
+from .config import CHUNK_TEMPLATE_VERSION
 from .report import Outcome
 from .state import FAILED as STATE_FAILED
 from .uploader import UPLOADED
@@ -31,7 +36,13 @@ def _compare(state, article_id: str, new_hash: str) -> str:
 
 def article(art: Article, client, store_id: str, state) -> Outcome:
     md = content.html_to_markdown(art.body)
-    content_hash = content.content_hash(md)
+    # Delta key = fingerprint of EVERYTHING that lands in the uploaded bytes, not
+    # just the body: the chunk-template version, title, and canonical URL all
+    # appear in each chunk's header now, so a change in any of them must count as
+    # an "update". A body-only hash would keep serving a stale header (or an old
+    # template) forever because the body itself never changed.
+    signature = f"tmpl:{CHUNK_TEMPLATE_VERSION}\n{art.title}\n{art.html_url}\n{md}"
+    content_hash = content.content_hash(signature)
 
     verdict = _compare(state, art.id, content_hash)
     if verdict == "skip":
@@ -50,7 +61,7 @@ def article(art: Article, client, store_id: str, state) -> Outcome:
             except Exception as exc:  # noqa: BLE001
                 print(f"    -> cleanup: could not delete {file_id}: {exc}")
 
-    chunks = chunk.split_markdown(md, art.html_url)
+    chunks = chunk.split_markdown(md, art.html_url, art.title)
     if not chunks:
         # Empty body -> nothing to upload. Confirm with no chunks so we don't
         # reprocess it every run.
@@ -74,7 +85,16 @@ def article(art: Article, client, store_id: str, state) -> Outcome:
     for r in results:
         if r.status != UPLOADED:
             print(f"       chunk {r.chunk_index}: {r.error}")
-    # Lazy rollback (§10): keep the chunks that did upload, record their ids for
-    # next-run cleanup; do NOT write the hash (record_failed enforces this).
-    state.record_failed(art.id, uploaded_ids)
+    # Eager rollback (§10): a partially-uploaded article must not stay live in the
+    # store -- retrieval could otherwise serve an incomplete/half-indexed article.
+    # Delete the chunks that DID upload now, then record no chunk ids and no hash
+    # (record_failed enforces the no-hash rule, so the next run reprocesses). Any
+    # delete that fails here is swept by reconcile.orphans() on the next run,
+    # since a FAILED article no longer contributes known-good ids.
+    for file_id in uploaded_ids:
+        try:
+            vector_store.delete_file(client, store_id, file_id)
+        except Exception as exc:  # noqa: BLE001
+            print(f"       rollback: could not delete {file_id}: {exc} (reconcile will sweep)")
+    state.record_failed(art.id, [])
     return Outcome.failed(art.id)
