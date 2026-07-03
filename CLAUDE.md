@@ -18,6 +18,7 @@ new/changed articles.
 5. Env template: @".env.example" — documents required env vars (`OPENAI_API_KEY`, etc.);
    `.env` itself is git-ignored and never committed.
 6. Prior attempt analysis (reference only, do not copy): @"docs/prior/prior-implementation.md"
+7. API Documentation: @"docs/api/api_map.md" — Contains a map of all API documentation (Zendesk, OpenAI Vector Store). AI needs to read this file first to have the map, and after that search if needed.
 
 ## Code style
 
