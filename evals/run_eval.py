@@ -45,13 +45,14 @@ def main() -> int:
     valid_ids = zendesk.fetch_all_article_ids()
 
     total = passed = 0
-    print(f"[eval] Tier-1 format checks against assistant {assistant_id}\n")
-    for i, question in enumerate(QUESTIONS, start=1):
-        answer = assistant.ask(client, assistant_id, question)
-        results = checks.run_checks(answer, valid_ids)
+    print(f"[eval] Tier-1.5 format checks against assistant {assistant_id}\n")
+    for i, probe in enumerate(QUESTIONS, start=1):
+        answer = assistant.ask(client, assistant_id, probe.question)
+        results = checks.run_checks(answer, valid_ids, in_scope=probe.in_scope)
         q_pass = all(r.passed for r in results)
 
-        print(f"Q{i}: {question}")
+        scope = "in-scope" if probe.in_scope else "out-of-scope"
+        print(f"Q{i} [{scope}]: {probe.question}")
         snippet = answer.replace("\n", " ")[:120]
         print(f"    answer: {snippet}{'...' if len(answer) > 120 else ''}")
         for r in results:

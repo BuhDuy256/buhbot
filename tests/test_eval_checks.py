@@ -39,20 +39,42 @@ def test_horizontal_rule_is_not_a_bullet():
     assert checks.count_bullets("some text\n\n---\n\nmore text") == 0
 
 
-# --- citation count ---------------------------------------------------------
+# --- citation (scope-aware, Tier-1.5) ---------------------------------------
 
-def test_three_citations_pass():
+def test_in_scope_one_real_citation_passes():
+    answer = f"Here you go.\nArticle URL: {_url('111')}"
+    assert checks.check_citation(answer, VALID, in_scope=True).passed
+
+
+def test_in_scope_three_real_citations_pass():
     answer = "\n".join(f"Article URL: {_url(x)}" for x in ("111", "222", "333"))
-    assert checks.check_citation_count(answer).passed
+    assert checks.check_citation(answer, VALID, in_scope=True).passed
 
 
-def test_four_citations_fail():
+def test_in_scope_zero_citations_fails():
+    # this is the un-hiding of finding ①: a green check no longer masks it
+    r = checks.check_citation("no citations here", VALID, in_scope=True)
+    assert not r.passed
+
+
+def test_in_scope_four_citations_fail():
     answer = "\n".join(f"Article URL: {_url(x)}" for x in ("111", "222", "333", "111"))
-    assert not checks.check_citation_count(answer).passed
+    assert not checks.check_citation(answer, VALID, in_scope=True).passed
 
 
-def test_zero_citations_allowed():
-    assert checks.check_citation_count("no citations here").passed  # "up to 3"
+def test_in_scope_single_fake_citation_fails():
+    # a citation is present but not real -> no *real* citation -> fail
+    answer = f"Article URL: {_url('999')}"
+    assert not checks.check_citation(answer, VALID, in_scope=True).passed
+
+
+def test_out_of_scope_zero_citations_passes():
+    assert checks.check_citation("The capital is Paris.", VALID, in_scope=False).passed
+
+
+def test_out_of_scope_any_citation_fails():
+    answer = f"Paris.\nArticle URL: {_url('111')}"  # fabricated source on out-of-scope
+    assert not checks.check_citation(answer, VALID, in_scope=False).passed
 
 
 # --- real URLs --------------------------------------------------------------
@@ -82,5 +104,5 @@ def test_markdown_link_trailing_paren_not_swallowed():
 
 
 def test_run_checks_returns_all_three_rules():
-    results = checks.run_checks("hello", VALID)
-    assert {r.rule for r in results} == {"bullet_limit", "citation_count", "urls_real"}
+    results = checks.run_checks("hello", VALID, in_scope=True)
+    assert {r.rule for r in results} == {"bullet_limit", "citation", "urls_real"}

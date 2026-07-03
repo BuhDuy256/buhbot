@@ -64,10 +64,35 @@ def check_bullet_limit(answer: str) -> CheckResult:
     )
 
 
-def check_citation_count(answer: str) -> CheckResult:
-    n = len(citation_lines(answer))
+def _url_article_id(url: str) -> str | None:
+    m = _ARTICLE_ID.search(url)
+    return m.group(1) if m else None
+
+
+def check_citation(answer: str, valid_ids: set[str], in_scope: bool) -> CheckResult:
+    """Tier-1.5: scope-aware citation check that un-hides finding ①.
+
+    Counting only the upper bound (<=3) let a 0-citation answer pass silently.
+    This asserts the *right* count per scope:
+      - in-scope     -> 1..3 real 'Article URL:' line(s) (0 now FAILS),
+      - out-of-scope -> exactly 0 (any citation = a fabricated source).
+    'Real' means the cited URL resolves to an article id we actually have.
+    """
+    urls = citation_lines(answer)
+    total = len(urls)
+    real = sum(1 for u in urls if _url_article_id(u) in valid_ids)
+
+    if in_scope:
+        ok = 1 <= real and total <= MAX_CITATIONS
+        return CheckResult(
+            "citation",
+            ok,
+            f"in-scope: {real} real / {total} total 'Article URL:' line(s) "
+            f"(need 1..{MAX_CITATIONS})",
+        )
+    ok = total == 0
     return CheckResult(
-        "citation_count", n <= MAX_CITATIONS, f"{n} 'Article URL:' line(s) <= {MAX_CITATIONS}"
+        "citation", ok, f"out-of-scope: {total} 'Article URL:' line(s) (need 0)"
     )
 
 
@@ -86,9 +111,9 @@ def check_urls_real(answer: str, valid_ids: set[str]) -> CheckResult:
     )
 
 
-def run_checks(answer: str, valid_ids: set[str]) -> list[CheckResult]:
+def run_checks(answer: str, valid_ids: set[str], in_scope: bool = True) -> list[CheckResult]:
     return [
         check_bullet_limit(answer),
-        check_citation_count(answer),
+        check_citation(answer, valid_ids, in_scope),
         check_urls_real(answer, valid_ids),
     ]
