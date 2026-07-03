@@ -312,7 +312,10 @@ store per assistant — verified in `docs/api/openai/assistant/`), but we delibe
 don't. Binding sequence: deploy → let the pipeline run once (creates the `optibot-kb`
 store) → then in the Playground create the Assistant and attach that now-existing
 store. One-time manual bind; it persists across daily runs because name-discovery
-keeps the same store ID stable.
+keeps the same store ID stable. The Assistant's `asst_...` id then goes into
+`config.ASSISTANT_ID` (a constant, not an env var: it is a plain identifier, not a
+secret, and keeping it in config leaves the pipeline with a single required env
+var, `OPENAI_API_KEY`, per the assignment). Only `evals/run_eval.py` reads it.
 - *Required sampling config (set once, by hand, on the Assistant):* `temperature = 0`,
   `top_p = 1`. A support RAG bot wants maximum determinism, not creativity, so the
   temperature knob goes to its floor. At temperature 0 the distribution is already

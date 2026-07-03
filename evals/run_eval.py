@@ -2,8 +2,15 @@
 the deterministic format checks, and report per-check ADHERENCE RATES.
 
 Usage:
-    OPTIBOT_ASSISTANT_ID=asst_... uv run python -m evals.run_eval
-    OPTIBOT_ASSISTANT_ID=asst_... OPTIBOT_EVAL_RUNS=5 uv run python -m evals.run_eval
+    uv run python -m evals.run_eval
+    # more runs per question (PowerShell: set $env:OPTIBOT_EVAL_RUNS="5" first):
+    OPTIBOT_EVAL_RUNS=5 uv run python -m evals.run_eval
+
+The deployed Assistant's id is read from ``src.config.ASSISTANT_ID`` -- a plain
+constant, NOT an env var -- so the pipeline keeps its single-secret contract
+(only OPENAI_API_KEY). Paste the ``asst_...`` id there after the one-time
+Playground setup below. ``OPTIBOT_EVAL_RUNS`` stays an optional env knob (default
+1) because it is a dev-time convenience, not a required input.
 
 Why repeat each question (OPTIBOT_EVAL_RUNS, default 1): the Assistant's
 compliance with the system prompt is *probabilistic*, not guaranteed -- even at
@@ -22,7 +29,7 @@ Prerequisite -- the Assistant must already exist in the Playground with:
     it is left at 1 rather than adding a second knob. NOTE: temp 0 reduces
     variance, it does NOT guarantee identical output -- which is exactly why this
     runner measures a rate).
-Set its id in OPTIBOT_ASSISTANT_ID.
+Then set ``ASSISTANT_ID`` in ``src/config.py`` to its id.
 
 This is a regression baseline: fix this set, change ONE thing (chunk size,
 cleaning, header template, ...), re-run, compare the rates. That is how a change
@@ -34,6 +41,7 @@ import sys
 from collections import defaultdict
 
 from src import zendesk
+from src.config import ASSISTANT_ID
 from src.settings import load_settings
 
 from . import assistant, checks
@@ -60,9 +68,10 @@ def main() -> int:
     settings = load_settings()
     client = settings.client()
 
-    assistant_id = os.getenv("OPTIBOT_ASSISTANT_ID")
+    assistant_id = ASSISTANT_ID
     if not assistant_id:
-        print("ERROR: set OPTIBOT_ASSISTANT_ID to the deployed Assistant's id.")
+        print("ERROR: set ASSISTANT_ID in src/config.py to the deployed "
+              "Assistant's id (see this module's docstring for setup).")
         return 2
 
     # Validate cited URLs against the FULL catalog, not the uploaded subset: a

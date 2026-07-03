@@ -24,6 +24,15 @@ ARTICLES_PER_PAGE: int = 100  # production pagination page size
 # --- vector store identity (find-or-create by name -- state-design.md §11) ---
 STORE_NAME: str = "optibot-kb"
 
+# --- Assistant identity (eval-only; the pipeline never touches the Assistant) --
+# The deployed Assistant is created BY HAND in the Playground (state-design.md
+# §11), so its id isn't known until after that one-time setup. It is a plain
+# identifier, not a secret, so it lives here as a constant -- keeping the pipeline
+# to a single env var (OPENAI_API_KEY) as the assignment requires, instead of
+# adding OPTIBOT_ASSISTANT_ID. Paste the `asst_...` id here once, then run the
+# eval. Empty until then; evals/run_eval.py fails loudly if it is still blank.
+ASSISTANT_ID: str = ""
+
 # --- chunking ----------------------------------------------------------------
 # CHUNK_BUDGET_TOKENS is the client-side per-chunk body budget. STATIC_* are
 # passed to OpenAI to *neutralize* its server-side re-chunking: at 4096 vs a
@@ -31,15 +40,22 @@ STORE_NAME: str = "optibot-kb"
 # chunk. See optimus-bot-pipeline-review.md "Neutralize server-side chunking".
 CHUNK_BUDGET_TOKENS: int = 800
 STATIC_MAX_CHUNK_TOKENS: int = 4096
-CHUNK_OVERLAP_TOKENS: int = 0
+CHUNK_OVERLAP_TOKENS: int = 0  # server-side static-strategy overlap (kept 0)
 TOKENIZER_MODEL: str = "gpt-4o"  # tiktoken encoding used for client token counts
 
-# Bumped whenever the per-chunk header TEMPLATE changes (e.g. adding the title
-# line). It is folded into the delta hash so an existing deployment re-uploads
-# every article once to pick up the new format -- a body-only hash would keep
-# serving the old header forever because the body is unchanged. v1 = URL-only
-# header; v2 = "# <title>" + "Article URL:" header.
-CHUNK_TEMPLATE_VERSION: int = 2
+# Client-side, BLOCK-level overlap: how many whole blocks from the tail of the
+# previous chunk are repeated at the head of the next one. Block-level (not a
+# character/token %) keeps boundary context without minting near-duplicate
+# chunks; 0 disables it. Only ever carries blocks that comfortably fit the budget
+# (an oversized/hard-split piece is never duplicated). See chunk.py.
+CHUNK_OVERLAP_BLOCKS: int = 1
+
+# Bumped whenever the per-chunk header TEMPLATE or the chunk *bodies* change, so
+# an existing deployment re-uploads every article once to pick up the new format
+# (a body-only hash would keep serving the old chunks forever). v1 = URL-only
+# header; v2 = "# <title>" + "Article URL:"; v3 = + "Section Path:" breadcrumb
+# and one-block overlap.
+CHUNK_TEMPLATE_VERSION: int = 3
 
 # --- upload ------------------------------------------------------------------
 # How often to re-poll a file_batch while it is still in_progress. A max-wait

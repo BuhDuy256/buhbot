@@ -6,6 +6,8 @@ pin the properties the design relies on: bounded chunk count, atomic code
 fences, and a citable header on every chunk.
 """
 
+import re
+
 from src import chunk
 from src.chunk import split_markdown, _ntokens
 from src.config import CHUNK_BUDGET_TOKENS, STATIC_MAX_CHUNK_TOKENS
@@ -62,9 +64,47 @@ def test_title_header_when_title_given():
 
 def test_no_title_keeps_url_only_header():
     md = "Just one paragraph."
-    chunks = split_markdown(md, URL)  # no title -> no "# " line
+    chunks = split_markdown(md, URL)  # no title -> no "# " line, no headings
     assert chunks[0].text.startswith(f"Article URL: {URL}\n\n")
     assert not chunks[0].text.startswith("#")
+    assert "Section Path:" not in chunks[0].text
+
+
+# --- section path (contextual breadcrumb) -----------------------------------
+
+def test_section_path_reflects_heading_hierarchy():
+    heading = "# Setup\n\n## Network Settings\n\n"
+    body = "\n\n".join(f"Paragraph {i} " + "word " * 50 for i in range(20))
+    chunks = split_markdown(heading + body, URL, title="Doc")
+    # some chunk starts under the H1>H2 section and must carry that breadcrumb
+    assert any("Section Path: Setup > Network Settings" in c.text for c in chunks)
+
+
+def test_section_path_ignores_hashes_inside_code_fence():
+    # a big paragraph after the fence lands in its own chunk; its Section Path
+    # must be the real heading, never the "# comment" line inside the fence.
+    md = "# Real Heading\n\n```\n# not a heading\ncode\n```\n\n" + "word " * 900
+    chunks = split_markdown(md, URL)
+    tail = [c for c in chunks if c.text.rstrip().endswith("word")][-1]
+    header_block = tail.text.split("\n\n", 1)[0]
+    assert "Section Path: Real Heading" in header_block
+    assert "not a heading" not in header_block
+
+
+# --- one-block overlap ------------------------------------------------------
+
+def test_one_block_overlap_carries_previous_tail_block():
+    # 20 fat, uniquely-numbered blocks force several chunks
+    blocks = [f"Block {i} " + "filler " * 60 for i in range(20)]
+    chunks = split_markdown("\n\n".join(blocks), URL)
+    assert len(chunks) >= 2
+
+    def block_ids(text):
+        return re.findall(r"Block (\d+)", text)
+
+    # the last block of chunk 0 reappears as the first block of chunk 1
+    ids0, ids1 = block_ids(chunks[0].text), block_ids(chunks[1].text)
+    assert ids0[-1] == ids1[0]
 
 
 # --- the regression guard: bounded chunk count ------------------------------
