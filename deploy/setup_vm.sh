@@ -24,8 +24,8 @@ DATA_DIR="$INSTALL_DIR/data"
 LOGS_DIR="$INSTALL_DIR/logs"
 CRON_SCRIPT="$INSTALL_DIR/run_job.sh"
 CRON_USER="${SUDO_USER:-azureuser}"
-# Cron schedule: 2:00 AM UTC daily (= 9:00 AM Vietnam time UTC+7)
-CRON_SCHEDULE="0 2 * * *"
+# Cron schedule: 2:30 AM UTC daily (= 9:30 AM Vietnam time UTC+7)
+CRON_SCHEDULE="30 2 * * *"
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo "============================================================"
@@ -126,4 +126,4 @@ echo "  2. Test manually: sudo -u $CRON_USER $CRON_SCRIPT"
 echo "  3. Check logs:    tail -f $LOGS_DIR/cron.log"
 echo "  4. Verify cron:   crontab -u $CRON_USER -l"
 echo ""
-echo " Cron will run daily at 1:30 AM UTC (8:30 AM Vietnam time)."
+echo " Cron will run daily at 2:30 AM UTC (9:30 AM Vietnam time)."

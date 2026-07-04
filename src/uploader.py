@@ -25,6 +25,7 @@ from openai import OpenAI
 from .chunk import ChunkText
 from .config import (
     BATCH_POLL_INTERVAL_SECONDS,
+    BATCH_POLL_TIMEOUT_SECONDS,
     CHUNK_OVERLAP_TOKENS,
     STATIC_MAX_CHUNK_TOKENS,
 )
@@ -113,15 +114,25 @@ def _create_base_file(client: OpenAI, article_id: str, chunk: ChunkText) -> str:
 
 
 def _poll_batch(client: OpenAI, store_id: str, batch_id: str):
-    """Poll until the batch leaves ``in_progress``.
+    """Poll until the batch leaves ``in_progress``, or timeout is hit.
 
-    Retry/backoff and a max-wait timeout are intentionally NOT here yet -- happy
-    path only, with this function as the clean seam to add them once the
-    stress-test phase shows what's needed (state-design.md §10/§11).
+    If the batch stays in_progress beyond BATCH_POLL_TIMEOUT_SECONDS, raises
+    TimeoutError so the article is marked FAILED and the run continues.
+    OpenAI occasionally gets 1 file stuck indefinitely; a timeout is essential
+    for an unattended daily cron job.
     """
     start = time.monotonic()
     batch = client.vector_stores.file_batches.retrieve(batch_id, vector_store_id=store_id)
     while batch.status == "in_progress":
+        elapsed = int(time.monotonic() - start)
+        if elapsed > BATCH_POLL_TIMEOUT_SECONDS:
+            counts = batch.file_counts
+            raise TimeoutError(
+                f"batch {batch_id} timed out after {elapsed}s "
+                f"({counts.completed}/{counts.total} completed, "
+                f"{counts.in_progress} still in progress) — "
+                f"marking article as FAILED; will retry next run."
+            )
         time.sleep(BATCH_POLL_INTERVAL_SECONDS)
         batch = client.vector_stores.file_batches.retrieve(
             batch_id, vector_store_id=store_id

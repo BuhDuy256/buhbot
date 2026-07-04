@@ -5,7 +5,7 @@
 #   crontab -l    # view
 #   crontab -e    # edit
 #
-# Schedule: 2:00 AM UTC = 9:00 AM Vietnam time (UTC+7)
+# Schedule: 2:30 AM UTC = 9:30 AM Vietnam time (UTC+7)
 #
 # minute  hour  day  month  weekday  command
-0 2 * * * /opt/optibot/run_job.sh >> /opt/optibot/logs/cron.log 2>&1
+30 2 * * * /opt/optibot/run_job.sh >> /opt/optibot/logs/cron.log 2>&1

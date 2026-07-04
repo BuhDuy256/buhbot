@@ -82,10 +82,12 @@ TOKENIZER_MODEL: str = "gpt-4o"  # tiktoken encoding used for client token count
 CHUNK_TEMPLATE_VERSION: int = 4
 
 # --- upload ------------------------------------------------------------------
-# How often to re-poll a file_batch while it is still in_progress. A max-wait
-# timeout is deliberately NOT set yet -- deferred to the stress-test phase
-# (state-design.md §11 "Batch poll timeout").
+# How often to re-poll a file_batch while it is still in_progress.
 BATCH_POLL_INTERVAL_SECONDS: float = 2.0
+# Max total wait for a single batch before we give up and mark it failed.
+# OpenAI batches occasionally get 1 file stuck indefinitely (observed in prod);
+# a timeout lets the rest of the run continue instead of hanging forever.
+BATCH_POLL_TIMEOUT_SECONDS: float = 120.0  # 2 minutes per batch
 
 # --- state on disk (persistent VM volume -- state-design.md §11) -------------
 REPO_ROOT: Path = Path(__file__).resolve().parent.parent
