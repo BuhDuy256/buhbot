@@ -1,20 +1,21 @@
 """Static configuration for the OptiBot pipeline.
 
-Everything here is a code-level constant on purpose. The only value that is read
-from the environment is ``OPENAI_API_KEY`` (see ``settings.py``); see
-``docs/lifecycle/state-design.md`` §11 for why ``ENV`` and the vector-store
-identity are constants rather than env vars.
+``OPENAI_API_KEY`` is the primary secret read from the environment (settings.py).
+``APP_ENV`` controls run mode and is also read from the environment so the same
+Docker image can run in both development and production without a rebuild.
+All other values are code-level constants (see docs/lifecycle/state-design.md §11).
 """
 
+import os
 from pathlib import Path
 
 # --- run mode ---------------------------------------------------------------
-# "development" caps how many articles are fetched so a local run is fast; the
-# assignment requires >= 30, so the dev cap stays at or above that. Switching to
-# "production" enables full pagination. Changing this needs a code edit + rebuild
-# (accepted trade-off for a take-home -- state-design.md §11).
-ENV: str = "development"
-MAX_ARTICLES_DEV: int = 30
+# Read from APP_ENV environment variable; defaults to "development" for safety.
+# - "development" : caps fetched articles at MAX_ARTICLES_DEV (fast local runs)
+# - "production"  : full pagination, all articles scraped
+# Set via: docker run -e APP_ENV=production ...  or in your .env file.
+ENV: str = os.environ.get("APP_ENV", "development")
+MAX_ARTICLES_DEV: int = 50
 
 # --- Zendesk (no auth needed for this endpoint -- state-design.md §9) --------
 ZENDESK_BASE_URL: str = "support.optisigns.com"
@@ -45,7 +46,7 @@ ASSISTANT_ID: str = ""
 # over. STATIC_* below is passed to OpenAI to *neutralize* its server-side
 # re-chunking -- at 4096 vs an 800-token client chunk there is a ~5x margin, so 1
 # uploaded file == 1 stored chunk.
-CHUNK_MAX_TOKENS: int = 800
+CHUNK_MAX_TOKENS: int = 1200
 
 # Target size of the LOOK-BACK overlap repeated at the head of each chunk: the
 # whole trailing lines of the previous chunk, up to this many tokens. Counted

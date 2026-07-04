@@ -1,0 +1,11 @@
+# OptiBot Pipeline — crontab reference
+#
+# Installed automatically by setup_vm.sh.
+# To view/edit manually on the VM:
+#   crontab -l    # view
+#   crontab -e    # edit
+#
+# Schedule: 1:30 AM UTC = 8:30 AM Vietnam time (UTC+7)
+#
+# minute  hour  day  month  weekday  command
+30 1 * * * /opt/optibot/run_job.sh >> /opt/optibot/logs/cron.log 2>&1

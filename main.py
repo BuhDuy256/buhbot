@@ -2,8 +2,14 @@
 
 Reads as the phase list: lock -> settings -> load state -> find/create store ->
 reconcile orphans -> fetch -> process each article -> report -> exit code.
-All detail logic lives in ``src/``.
+All detail logic lives in ``src/``
 """
+
+# load_dotenv() MUST run before any src.* import — config.py reads APP_ENV at
+# module level, so the .env file must already be in os.environ when Python
+# first imports src/config.py.
+from dotenv import load_dotenv
+load_dotenv()
 
 import sys
 

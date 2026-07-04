@@ -5,6 +5,11 @@ ENV PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
+# Runtime env vars — override at docker run time via -e flags.
+# OPENAI_API_KEY is the only secret; APP_ENV switches run mode.
+ENV OPENAI_API_KEY="" \
+    APP_ENV="development"
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app

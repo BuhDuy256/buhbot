@@ -223,9 +223,9 @@ def _heading_paths(blocks: list[str]) -> list[str]:
 def _header(title: str, article_url: str, path: str) -> str:
     """The provenance header block (no trailing blank line)."""
     lines = [f"# {title}"] if title else []
-    lines.append(f"Article URL: {article_url}")
+    lines.append(f"\nArticle URL: {article_url}")
     if path:
-        lines.append(f"Section Path: {path}")
+        lines.append(f"\nSection Path: {path}")
     return "\n".join(lines)
 
 
@@ -303,6 +303,7 @@ def split_markdown(md: str, article_url: str, title: str = "") -> list[ChunkText
     # normal cap, and a fence cannot be cleanly overlapped into anyway.
     out: list[ChunkText] = []
     prev_body: str | None = None
+    footer = f"\n\n---\n\nArticle URL: {article_url}"
     for k, (body, start, exempt) in enumerate(bodies):
         header = _header(title, article_url, paths[start])
         text = f"{header}\n\n{body}"
@@ -313,6 +314,6 @@ def split_markdown(md: str, article_url: str, title: str = "") -> list[ChunkText
                 cand = f"{header}\n\n{overlap}\n\n{body}"
                 if _ntokens(cand) <= CHUNK_MAX_TOKENS:
                     text = cand
-        out.append(ChunkText(index=k, text=text))
+        out.append(ChunkText(index=k, text=text + footer))
         prev_body = body
     return out
