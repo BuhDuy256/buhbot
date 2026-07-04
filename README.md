@@ -1,6 +1,6 @@
-# OptiBot
+# BuhBot
 
-OptiBot is a daily-synced AI support assistant for [OptiSigns](https://support.optisigns.com), powered by OpenAI's File Search (vector store).
+BuhBot is a daily-synced AI support assistant, powered by OpenAI's File Search (vector store).
 
 ## Setup
 
@@ -35,7 +35,7 @@ docker run --rm --env-file .env optibot
 
 Exits `0` on success. Logs: `added / updated / skipped` counts to stdout.
 
-**Dev mode** (scrapes 30 articles only):
+**Dev mode** (scrapes n articles only, you can adjust the number in [config.py](src\config.py)):
 ```bash
 # In .env set APP_ENV=development
 docker run --rm --env-file .env optibot
@@ -67,15 +67,19 @@ State persisted in `data/hash_store.json`. Each run logs `added / updated / skip
 
 **Schedule:** Every day at 9:30 AM Vietnam time (2:30 AM UTC) via `cron`
 
-**Logs:** <!-- TODO: paste link to log file or screenshot here -->
+**Logs:** See screenshot below
 
-**Last run output:**
+**Last run output (2026-07-04 02:22:59 UTC):**
 ```
-<!-- TODO: paste log output showing added/updated/skipped counts -->
+[report] added=34  updated=0  skipped=16  failed=0  total=50
+[SUCCESS] Pipeline completed. Exit code: 0
 ```
+
+![Cron job logs](docs/images/cron-job-logs.jpg)
+
 
 ## Assistant Demo
 
 **Test question:** *"How do I add a YouTube video?"*
 
-<!-- TODO: insert screenshot showing correct answer with cited Article URLs -->
+![Assistant response with cited sources](docs/images/buhbot-response.jpg)
