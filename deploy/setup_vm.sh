@@ -24,8 +24,8 @@ DATA_DIR="$INSTALL_DIR/data"
 LOGS_DIR="$INSTALL_DIR/logs"
 CRON_SCRIPT="$INSTALL_DIR/run_job.sh"
 CRON_USER="${SUDO_USER:-azureuser}"
-# Cron schedule: 1:30 AM UTC daily (= 8:30 AM Vietnam time UTC+7)
-CRON_SCHEDULE="30 1 * * *"
+# Cron schedule: 2:00 AM UTC daily (= 9:00 AM Vietnam time UTC+7)
+CRON_SCHEDULE="0 2 * * *"
 # ─────────────────────────────────────────────────────────────────────────────
 
 echo "============================================================"
