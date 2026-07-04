@@ -211,3 +211,11 @@ personal/
 .vscode/
 data/
 optimus-bot-pipeline/
+
+# Internal docs -- keep locally, don't publish. Only docs/images/ ships.
+docs/*
+!docs/images
+
+# Claude Code config
+CLAUDE.md
+.claude/
