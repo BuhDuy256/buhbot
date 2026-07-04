@@ -37,6 +37,12 @@ def clean_html(html: str) -> str:
     # role="navigation" catches nav regions not marked with a <nav> tag.
     for tag in soup.select('[role="navigation"]'):
         tag.decompose()
+    # Inline base64 data-URI images carry zero retrievable text but can be huge
+    # (one real article embeds an 85k-token PNG). Left in, markdownify turns each
+    # into a single enormous ![](data:...) line that pollutes the embedding and
+    # blows past the chunk ceiling. Real http(s) image URLs are small and kept.
+    for tag in soup.select('img[src^="data:"]'):
+        tag.decompose()
     return str(soup)
 
 

@@ -27,6 +27,22 @@ def test_strips_nav_header_footer():
     assert "bottom" not in md
 
 
+def test_strips_base64_data_uri_image():
+    # a real article embeds an 85k-token base64 PNG; it must not survive cleaning.
+    html = '<p>keep this</p><img src="data:image/png;base64,AAAABBBBCCCCDDDD">'
+    md = content.html_to_markdown(html)
+    assert "keep this" in md
+    assert "data:image" not in md
+    assert "base64" not in md
+
+
+def test_keeps_http_image_urls():
+    # only data: URIs are junk; a real attachment URL is small and preserved.
+    html = '<img src="https://support.optisigns.com/hc/article_attachments/42.png">'
+    md = content.html_to_markdown(html)
+    assert "article_attachments/42.png" in md
+
+
 def test_does_not_overstrip_classes_containing_ad_or_header():
     # "breadcrumb" contains "ad"; a <div class="header-note"> is real content
     # here. The conservative tag-only strip must keep both.

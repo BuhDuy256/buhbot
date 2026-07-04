@@ -34,28 +34,51 @@ STORE_NAME: str = "optibot-kb"
 ASSISTANT_ID: str = ""
 
 # --- chunking ----------------------------------------------------------------
-# CHUNK_BUDGET_TOKENS is the client-side per-chunk body budget. STATIC_* are
-# passed to OpenAI to *neutralize* its server-side re-chunking: at 4096 vs a
-# ~800-token client chunk there is a ~5x margin, so 1 uploaded file == 1 stored
-# chunk. See optimus-bot-pipeline-review.md "Neutralize server-side chunking".
-CHUNK_BUDGET_TOKENS: int = 800
+# The chunker (chunk.py) packs whole Markdown blocks into chunks, then prepends a
+# fixed token budget of LOOK-BACK overlap taken from the previous chunk. Two
+# ceilings govern size:
+#
+# CHUNK_MAX_TOKENS is the HARD cap on a normal emitted chunk.text (header +
+# look-back overlap + body). Every ordinary chunk stays at or below it, so chunk
+# size is directly controlled and predictable. The cap always wins: when a body is
+# large the look-back overlap shrinks (down to zero) rather than push the chunk
+# over. STATIC_* below is passed to OpenAI to *neutralize* its server-side
+# re-chunking -- at 4096 vs an 800-token client chunk there is a ~5x margin, so 1
+# uploaded file == 1 stored chunk.
+CHUNK_MAX_TOKENS: int = 800
+
+# Target size of the LOOK-BACK overlap repeated at the head of each chunk: the
+# whole trailing lines of the previous chunk, up to this many tokens. Counted
+# INSIDE CHUNK_MAX_TOKENS -- a chunk carries ~CHUNK_LOOKBACK_TOKENS of overlap plus
+# the remaining budget of new content. Token-budgeted (not "N whole blocks") so a
+# fat trailing block can no longer make two neighbours near-duplicates.
+CHUNK_LOOKBACK_TOKENS: int = 200
+
+# The ONE documented exception to CHUNK_MAX_TOKENS: a single code fence larger than
+# a normal chunk is kept ATOMIC (the assignment requires preserving code blocks)
+# and may ride above CHUNK_MAX_TOKENS up to here. Kept far below OpenAI's 4096
+# upload ceiling so even an exempt fence is never re-chunked server-side (which
+# would strip the Article URL header off the tail pieces). A fence larger than this
+# backstop -- pathological -- is the only case a fence is ever split.
+FENCE_MAX_TOKENS: int = 3000
+
+# The static max_chunk_size_tokens handed to OpenAI at upload (uploader.py). Set
+# to the API maximum (4096) -- the ceiling ABOVE which OpenAI slices a file. We
+# always stay under FENCE_MAX_TOKENS, so the gap to this ceiling is the safety
+# buffer against any divergence between our tiktoken count and OpenAI's server
+# tokenizer. Raising OpenAI's side is impossible (4096 is the API max); the buffer
+# must come from OUR cap being lower, never from lowering this.
 STATIC_MAX_CHUNK_TOKENS: int = 4096
 CHUNK_OVERLAP_TOKENS: int = 0  # server-side static-strategy overlap (kept 0)
 TOKENIZER_MODEL: str = "gpt-4o"  # tiktoken encoding used for client token counts
-
-# Client-side, BLOCK-level overlap: how many whole blocks from the tail of the
-# previous chunk are repeated at the head of the next one. Block-level (not a
-# character/token %) keeps boundary context without minting near-duplicate
-# chunks; 0 disables it. Only ever carries blocks that comfortably fit the budget
-# (an oversized/hard-split piece is never duplicated). See chunk.py.
-CHUNK_OVERLAP_BLOCKS: int = 1
 
 # Bumped whenever the per-chunk header TEMPLATE or the chunk *bodies* change, so
 # an existing deployment re-uploads every article once to pick up the new format
 # (a body-only hash would keep serving the old chunks forever). v1 = URL-only
 # header; v2 = "# <title>" + "Article URL:"; v3 = + "Section Path:" breadcrumb
-# and one-block overlap.
-CHUNK_TEMPLATE_VERSION: int = 3
+# and one-block overlap; v4 = token-budgeted look-back overlap + hard 800-token
+# per-chunk cap (fences exempt).
+CHUNK_TEMPLATE_VERSION: int = 4
 
 # --- upload ------------------------------------------------------------------
 # How often to re-poll a file_batch while it is still in_progress. A max-wait

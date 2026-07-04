@@ -2,26 +2,29 @@
 
 This is the module the prior pipeline got wrong (a 609-chunk runaway that its
 synthetic tests never caught -- prior-implementation.md §6.1/§7). The tests here
-pin the properties the design relies on: bounded chunk count, atomic code
-fences, and a citable header on every chunk.
+pin the properties the design relies on: a hard per-chunk token cap (with code
+fences the one documented exception), a citable header on every chunk, bounded
+chunk count, and a token-budgeted look-back overlap.
 """
 
 import re
 
 from src import chunk
 from src.chunk import split_markdown, _ntokens
-from src.config import CHUNK_BUDGET_TOKENS, STATIC_MAX_CHUNK_TOKENS
+from src.config import (
+    CHUNK_LOOKBACK_TOKENS,
+    CHUNK_MAX_TOKENS,
+    FENCE_MAX_TOKENS,
+    STATIC_MAX_CHUNK_TOKENS,
+)
 
 URL = "https://support.optisigns.com/hc/en-us/articles/123-example"
 
 
-def _bodies(chunks):
-    """Chunk text with the 'Article URL:' header line stripped back off."""
-    out = []
-    for c in chunks:
-        assert c.text.startswith(f"Article URL: {URL}")
-        out.append(c.text.split("\n\n", 1)[1] if "\n\n" in c.text else "")
-    return out
+def _body(text):
+    """A chunk's text with the leading provenance header stripped off (returns
+    the look-back overlap + body that follow the first blank line)."""
+    return text.split("\n\n", 1)[1] if "\n\n" in text else ""
 
 
 # --- empties ----------------------------------------------------------------
@@ -81,8 +84,8 @@ def test_section_path_reflects_heading_hierarchy():
 
 
 def test_section_path_ignores_hashes_inside_code_fence():
-    # a big paragraph after the fence lands in its own chunk; its Section Path
-    # must be the real heading, never the "# comment" line inside the fence.
+    # a big paragraph after the fence is windowed into its own chunks; their
+    # Section Path must be the real heading, never the "# comment" inside the fence.
     md = "# Real Heading\n\n```\n# not a heading\ncode\n```\n\n" + "word " * 900
     chunks = split_markdown(md, URL)
     tail = [c for c in chunks if c.text.rstrip().endswith("word")][-1]
@@ -91,42 +94,93 @@ def test_section_path_ignores_hashes_inside_code_fence():
     assert "not a heading" not in header_block
 
 
-# --- one-block overlap ------------------------------------------------------
+# --- look-back overlap ------------------------------------------------------
 
-def test_one_block_overlap_carries_previous_tail_block():
-    # 20 fat, uniquely-numbered blocks force several chunks
-    blocks = [f"Block {i} " + "filler " * 60 for i in range(20)]
+def test_lookback_overlap_repeats_previous_tail():
+    # many small, uniquely-numbered blocks force several chunks
+    blocks = [f"Para{i} " + "filler " * 20 for i in range(60)]
     chunks = split_markdown("\n\n".join(blocks), URL)
     assert len(chunks) >= 2
 
-    def block_ids(text):
-        return re.findall(r"Block (\d+)", text)
+    def para_ids(text):
+        return re.findall(r"Para(\d+)", text)
 
-    # the last block of chunk 0 reappears as the first block of chunk 1
-    ids0, ids1 = block_ids(chunks[0].text), block_ids(chunks[1].text)
-    assert ids0[-1] == ids1[0]
+    # look-back: chunk 1 re-opens INSIDE chunk 0's range and carries its tail --
+    # the shared run is a suffix of chunk 0 sitting at the head of chunk 1.
+    ids0, ids1 = para_ids(chunks[0].text), para_ids(chunks[1].text)
+    assert ids1[0] in ids0, "chunk 1 should open with look-back from chunk 0"
+    assert ids0[-1] in ids1, "chunk 0's last paragraph should reappear in chunk 1"
+
+
+def test_lookback_never_exceeds_its_budget():
+    # each chunk's overlap (head up to where new content begins) is bounded; a
+    # simple proxy: the overlap can never be so large it breaches the hard cap.
+    blocks = [f"Para{i} " + "filler " * 20 for i in range(60)]
+    for c in split_markdown("\n\n".join(blocks), URL):
+        assert _ntokens(c.text) <= CHUNK_MAX_TOKENS
+
+
+def test_first_chunk_has_no_overlap():
+    # nothing precedes chunk 0, so its body must start at the article's first block
+    blocks = [f"Para{i} " + "filler " * 20 for i in range(60)]
+    chunks = split_markdown("\n\n".join(blocks), URL)
+    assert _body(chunks[0].text).startswith("Para0 ")
 
 
 # --- the regression guard: bounded chunk count ------------------------------
 
 def test_no_runaway_chunk_count():
-    # ~100 uniform paragraphs of ~12 tokens => ~1200 tokens total. At an 800
-    # budget this must be a couple of chunks, NOT hundreds (the prior bug).
+    # ~100 uniform paragraphs -> a handful of chunks, NOT hundreds (the prior bug)
     md = "\n\n".join(f"This is paragraph {i} in the document body." for i in range(100))
     chunks = split_markdown(md, URL)
-    total = _ntokens(md)
-    expected = total / CHUNK_BUDGET_TOKENS
-    # generous ceiling: never more than ~3x the theoretical minimum
-    assert len(chunks) <= max(3, expected * 3)
+    expected = _ntokens(md) / CHUNK_MAX_TOKENS
+    assert len(chunks) <= max(4, expected * 4)  # generous ceiling
     assert len(chunks) >= 1
 
 
-def test_chunk_bodies_respect_budget_when_blocks_are_small():
-    md = "\n\n".join(f"Sentence block {i} here." for i in range(200))
-    for body in _bodies(split_markdown(md, URL)):
-        # each chunk's body stays within the soft budget (+ tolerance for the
-        # single block that tipped it over)
-        assert _ntokens(body) <= CHUNK_BUDGET_TOKENS + 60
+# --- the core invariant: normal chunk.text <= hard cap ----------------------
+
+def test_normal_chunks_within_hard_cap():
+    md = "\n\n".join(f"Sentence block {i} here with a few words." for i in range(200))
+    for c in split_markdown(md, URL):
+        assert _ntokens(c.text) <= CHUNK_MAX_TOKENS
+
+
+def test_oversized_prose_block_is_windowed_under_cap():
+    # a single paragraph well over the cap is NOT kept whole (that was the old
+    # design) -- it is windowed into several chunks, each within the hard cap.
+    big = " ".join(f"word{i}" for i in range(900))  # ~2000 tokens
+    assert _ntokens(big) > CHUNK_MAX_TOKENS
+    chunks = split_markdown(big, URL)
+    assert len(chunks) > 1
+    for c in chunks:
+        assert _ntokens(c.text) <= CHUNK_MAX_TOKENS
+
+
+def test_space_less_monster_blob_within_cap():
+    huge = "word" * 85000  # one space-less token blob, ~85k tokens
+    chunks = split_markdown(huge, URL)
+    assert len(chunks) > 1
+    for c in chunks:
+        assert _ntokens(c.text) <= CHUNK_MAX_TOKENS
+
+
+def test_no_chunk_ever_exceeds_openai_ceiling():
+    # a long URL + title maximise the header cost; every case must stay under the
+    # OpenAI 4096 upload ceiling (our fence backstop already guarantees this).
+    long_url = "https://support.optisigns.com/hc/en-us/articles/999999999-" + "x" * 90
+    long_title = "A Fairly Long Support Article Title That Eats Header Tokens"
+    cases = [
+        "word " * 4080,
+        "word" * 85000,
+        ("para " * 700) + "\n\n" + ("word " * 3900),
+    ]
+    assert FENCE_MAX_TOKENS < STATIC_MAX_CHUNK_TOKENS  # our backstop is below OpenAI's
+    for md in cases:
+        chunks = split_markdown(md, long_url, long_title)
+        assert chunks
+        for c in chunks:
+            assert _ntokens(c.text) <= STATIC_MAX_CHUNK_TOKENS
 
 
 # --- code fence integrity ---------------------------------------------------
@@ -134,7 +188,6 @@ def test_chunk_bodies_respect_budget_when_blocks_are_small():
 def test_code_fence_kept_intact_in_one_chunk():
     md = "Intro paragraph.\n\n```python\nprint('a')\nprint('b')\n```\n\nOutro."
     chunks = split_markdown(md, URL)
-    # the fenced block lands wholly inside a single chunk
     holder = [c for c in chunks if "print('a')" in c.text]
     assert len(holder) == 1
     assert "print('b')" in holder[0].text
@@ -152,24 +205,18 @@ def test_fence_with_blank_line_is_single_block():
     assert blocks == ["```\nline1\n\nline2\n```"]
 
 
-# --- oversized single block -------------------------------------------------
-
-def test_oversized_block_under_ceiling_stays_one_chunk():
-    # a single paragraph between the soft budget and the hard ceiling is NOT
-    # split -- it becomes its own chunk.
-    big = " ".join(f"word{i}" for i in range(1500))  # ~1500+ tokens, < 4096
-    assert CHUNK_BUDGET_TOKENS < _ntokens(big) < STATIC_MAX_CHUNK_TOKENS
-    chunks = split_markdown(big, URL)
+def test_big_fence_is_exempt_and_stays_whole():
+    # a single fence larger than the normal cap is kept atomic in one chunk, and
+    # is allowed to ride above CHUNK_MAX_TOKENS -- up to the fence backstop.
+    code = "\n".join(f"code_line_{i} = compute(value_{i}, factor_{i})" for i in range(140))
+    md = f"```python\n{code}\n```"
+    fence_tokens = _ntokens(md)
+    assert CHUNK_MAX_TOKENS < fence_tokens < FENCE_MAX_TOKENS
+    chunks = split_markdown(md, URL)
     assert len(chunks) == 1
-
-
-def test_block_over_ceiling_is_hard_split():
-    huge = "\n".join(f"line {i} with several tokens of content here" for i in range(4000))
-    assert _ntokens(huge) > STATIC_MAX_CHUNK_TOKENS
-    chunks = split_markdown(huge, URL)
-    assert len(chunks) > 1
-    for body in _bodies(chunks):
-        assert _ntokens(body) <= STATIC_MAX_CHUNK_TOKENS + 60
+    c = chunks[0]
+    assert c.text.count("```") == 2  # whole, balanced fence
+    assert CHUNK_MAX_TOKENS < _ntokens(c.text) <= FENCE_MAX_TOKENS
 
 
 # --- determinism ------------------------------------------------------------
